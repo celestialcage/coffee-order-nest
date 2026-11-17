@@ -1,8 +1,12 @@
 // src/lib/api.ts
 // Supabase와 통신하는 코드는 전부 이 파일에만 둔다.
 // 화면(컴포넌트)은 여기 함수만 호출 → 나중에 Spring으로 옮길 때 이 파일만 fetch로 바꾸면 됨.
-const API_URL = import.meta.env.VITE_API_URL as string;
-const TOKEN_KEY = "coffee_order_token";
+// const API_URL = import.meta.env.VITE_API_URL as string;
+// const TOKEN_KEY = "coffee_order_token";
+// 🥕  ① 맨 위: API_URL, TOKEN_KEY 두 줄을 이걸로 교체
+// 브라우저는 항상 프론트와 같은 주소의 /api 로 요청한다.
+// 개발: Vite 프록시(vite.config.ts) / 배포: Vercel rewrite(vercel.json)가 백엔드로 전달
+const API_URL = "/api";
 
 // ───────────── 타입 ─────────────
 export type MenuItem = { id: string; name: string };
@@ -94,6 +98,9 @@ function extractCode(body: unknown): string | undefined {
   );
 }
 
+// 🥕 ② request 함수: 아래 두 줄 삭제 (쿠키는 브라우저가 알아서 붙인다)
+//   const token = getToken();
+//   if (options.auth && token) headers["Authorization"] = `Bearer ${token}`;
 async function request<T>(
   method: string,
   path: string,
@@ -101,8 +108,8 @@ async function request<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {};
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
-  const token = getToken();
-  if (options.auth && token) headers["Authorization"] = `Bearer ${token}`;
+  // const token = getToken();
+  // if (options.auth && token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(API_URL + path, {
     method,
@@ -116,7 +123,9 @@ async function request<T>(
 
   // 로그인이 필요한 요청에서 401 = 토큰 만료/무효 → 로그아웃 처리
   // (참여자 API의 401은 "PIN 틀림"이라 여기에 해당하지 않는다)
-  if (res.status === 401 && options.auth) setToken(null);
+  // if (res.status === 401 && options.auth) setToken(null);
+  // 🥕 ③ request 함수: setToken(null) → notifyAuth(false)
+  if (res.status === 401 && options.auth) notifyAuth(false);
 
   const body: unknown = await res.json().catch(() => null);
   throw new ApiError(res.status, extractCode(body));
@@ -133,45 +142,61 @@ function toFailure(e: unknown): { ok: false; error: RpcError } {
 // ───────────── 총대: 로그인 ─────────────
 const authListeners = new Set<(loggedIn: boolean) => void>();
 
-function getToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+// 🥕 ④ getToken, setToken, signInWithGoogle, completeLogin, signOut 을 전부 지우고 이걸로 교체
+function notifyAuth(loggedIn: boolean) {
+  authListeners.forEach((listener) => listener(loggedIn));
 }
 
-function setToken(token: string | null) {
-  try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    // 저장소를 못 쓰는 환경이면 로그인 상태가 유지되지 않을 뿐
-  }
-  authListeners.forEach((listener) => listener(!!token));
-}
+// function getToken(): string | null {
+//   try {
+//     return localStorage.getItem(TOKEN_KEY);
+//   } catch {
+//     return null;
+//   }
+// }
 
-/** 백엔드의 로그인 시작 주소로 이동 → Google → 백엔드 → /auth/callback#token=... 으로 돌아온다 */
+// function setToken(token: string | null) {
+//   try {
+//     if (token) localStorage.setItem(TOKEN_KEY, token);
+//     else localStorage.removeItem(TOKEN_KEY);
+//   } catch {
+//     // 저장소를 못 쓰는 환경이면 로그인 상태가 유지되지 않을 뿐
+//   }
+//   authListeners.forEach((listener) => listener(!!token));
+// }
+
+// /** 백엔드의 로그인 시작 주소로 이동 → Google → 백엔드 → /auth/callback#token=... 으로 돌아온다 */
+// export async function signInWithGoogle() {
+//   window.location.href = `${API_URL}/auth/google`;
+// }
+
+// /** /auth/callback 페이지에서 호출: 주소의 #token=... 을 저장한다. 성공하면 true */
+// export function completeLogin(): boolean {
+//   const params = new URLSearchParams(window.location.hash.slice(1));
+//   const token = params.get("token");
+//   if (!token) return false;
+//   setToken(token);
+//   return true;
+// }
+
+// export async function signOut() {
+//   setToken(null);
+// }
+
+/** 백엔드의 로그인 시작 주소로 이동 → Google → 백엔드가 세션 쿠키를 심고 홈(/)으로 돌려보낸다 */
 export async function signInWithGoogle() {
   window.location.href = `${API_URL}/auth/google`;
 }
 
-/** /auth/callback 페이지에서 호출: 주소의 #token=... 을 저장한다. 성공하면 true */
-export function completeLogin(): boolean {
-  const params = new URLSearchParams(window.location.hash.slice(1));
-  const token = params.get("token");
-  if (!token) return false;
-  setToken(token);
-  return true;
-}
-
 export async function signOut() {
-  setToken(null);
+  await request("POST", "/auth/logout"); // 서버가 세션 쿠키를 지운다
+  notifyAuth(false);
 }
 
 /** 현재 로그인한 총대 (없으면 null) */
 export async function getCurrentUser(): Promise<CurrentUser | null> {
-  if (!getToken()) return null;
+  // 🥕 getCurrentUser에서는 첫 줄 if (!getToken()) r됨turn null;만 지우면 됨
+  // if (!getToken()) return null;
   try {
     return await request<CurrentUser>("GET", "/auth/me", { auth: true });
   } catch (e) {
