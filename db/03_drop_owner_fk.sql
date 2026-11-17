@@ -1,0 +1,1 @@
+alter table events drop constraint events_owner_id_fkey;
