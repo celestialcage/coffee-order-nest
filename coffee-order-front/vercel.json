@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://서비스이름.onrender.com/:path*"
+      "destination": "https://coffee-order-nest.onrender.com/:path*"
     },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
